@@ -8,14 +8,14 @@ def log_error(message):
     with open("logs.txt", "a", encoding="utf-8") as log_file:
         log_file.write(message + "\n\n")
 
-# Configuração do proxy
+# meu proxy bct
 proxy_url = "http://spsqykt77n:o4x7Olsbo=D5Tu0Qjn@br.smartproxy.com:10000"
 proxies = {
     "http": proxy_url,
     "https": proxy_url
 }
 
-# Cabeçalhos comuns para cada plataforma (usados tanto em login quanto em wallet)
+# cabezaiuu das reqeust pra ver saldo
 playpp_headers = {
     "accept": "application/json, text/plain, */*",
     "accept-encoding": "gzip, deflate, br, zstd",
@@ -87,7 +87,7 @@ wallet_info = {
     }
 }
 
-# Função para montar o payload de login conforme a plataforma e dados da conta
+# Função para montar o payload de login ne seu ze
 def build_payload(platform, email, password):
     device_id = f"Windows_{str(uuid.uuid4())}"
     if platform.lower() == "playpp":
@@ -156,7 +156,6 @@ def build_payload(platform, email, password):
     else:
         return None
 
-# Função que realiza a requisição de login e extrai o token
 def process_login(platform, email, password):
     payload = build_payload(platform, email, password)
     if not payload:
@@ -194,11 +193,10 @@ def process_login(platform, email, password):
         log_error(err)
         return None
 
-# Lista para armazenar os resultados de login e lock para acesso concorrente
+# armazenamento ne fioo
 results = []
 results_lock = threading.Lock()
 
-# Função para processar um grupo de credenciais (por plataforma)
 def process_group(platform, credentials):
     for email, password in credentials:
         token = process_login(platform, email, password)
@@ -235,7 +233,6 @@ def main():
     with open(arquivo_selecionado, "r", encoding="utf-8") as f:
         linhas = f.readlines()
 
-    # Agrupa as credenciais por plataforma
     grupos = {"playpp": [], "braqqq": [], "pttwin": []}
     for linha in linhas:
         linha = linha.strip()
@@ -257,7 +254,6 @@ def main():
             print(err)
             log_error(err)
 
-    # Inicia uma thread para cada grupo não vazio
     threads = []
     for plat, creds in grupos.items():
         if creds:
@@ -268,12 +264,10 @@ def main():
     for t in threads:
         t.join()
 
-    # Organiza os tokens na ordem: braqqq, playpp, pttwin
     ordenados = []
     for plat in ["braqqq", "playpp", "pttwin"]:
         ordenados.extend([r for r in results if r[0].lower() == plat])
 
-    # Cria a pasta tokenstotal se não existir e grava os tokens no arquivo tokens.txt
     tokens_dir = "tokenstotal"
     if not os.path.exists(tokens_dir):
         os.makedirs(tokens_dir)
@@ -284,7 +278,6 @@ def main():
 
     print("Processamento de logins concluído. Tokens salvos em", tokens_file)
 
-    # Após processar os logins, pergunta se deseja consultar os saldos
     consulta = input("Deseja consultar os saldos? (s/n): ")
     if consulta.strip().lower().startswith("s"):
         wallet_results = []
@@ -332,19 +325,16 @@ def main():
         for t in wallet_threads:
             t.join()
 
-        # Reorganiza os resultados na ordem: braqqq, playpp, pttwin
         ordenados_wallet = []
         for plat in ["braqqq", "playpp", "pttwin"]:
             ordenados_wallet.extend([r for r in wallet_results if r[0].lower() == plat])
 
-        # Atualiza o arquivo tokens.txt com a inclusão dos saldos
         with open(tokens_file, "w", encoding="utf-8") as f:
             for plataforma, token, email, senha, gold in ordenados_wallet:
                 f.write(f"{plataforma} : {token} : {email} : {senha} saldo : {gold}\n")
 
         print("Consulta de saldos concluída e tokens atualizados com saldos.")
 
-        # Agregação dos saldos
         total_saldo = 0.0
         saldo_braqqq = 0.0
         saldo_playpp = 0.0

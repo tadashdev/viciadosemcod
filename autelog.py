@@ -11,7 +11,7 @@ def log_error(message):
 errored_accounts = []
 errored_lock = threading.Lock()
 
-proxy_url = "http://spsqykt77n:o4x7Olsbo=D5Tu0Qjn@br.smartproxy.com:10000"
+proxy_url = "seu proxy aqui"
 proxies = {
     "http": proxy_url,
     "https": proxy_url

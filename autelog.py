@@ -2,20 +2,21 @@ import os
 import requests
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
-# Função para registrar erros no arquivo logs.txt
 def log_error(message):
     with open("logs.txt", "a", encoding="utf-8") as log_file:
         log_file.write(message + "\n\n")
 
-# meu proxy bct
+errored_accounts = []
+errored_lock = threading.Lock()
+
 proxy_url = "http://spsqykt77n:o4x7Olsbo=D5Tu0Qjn@br.smartproxy.com:10000"
 proxies = {
     "http": proxy_url,
     "https": proxy_url
 }
 
-# cabezaiuu das reqeust pra ver saldo
 playpp_headers = {
     "accept": "application/json, text/plain, */*",
     "accept-encoding": "gzip, deflate, br, zstd",
@@ -52,10 +53,9 @@ pttwin_headers = {
     "sec-ch-ua": '"Chromium";v="134", "Not:A-Brand";v="24", "Microsoft Edge";v="134"',
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-platform": '"Windows"',
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0"
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/134.0.0.0'
 }
 
-# Informações das APIs de login
 api_info = {
     "playpp": {
         "url": "https://api.playppttxy3.com/login/login",
@@ -71,7 +71,6 @@ api_info = {
     }
 }
 
-# Informações das APIs para consulta de wallet
 wallet_info = {
     "playpp": {
         "url": "https://api.playppttxy3.com/user/getUserWallet",
@@ -87,7 +86,6 @@ wallet_info = {
     }
 }
 
-# Função para montar o payload de login ne seu ze
 def build_payload(platform, email, password):
     device_id = f"Windows_{str(uuid.uuid4())}"
     if platform.lower() == "playpp":
@@ -191,9 +189,17 @@ def process_login(platform, email, password):
         err = f"{platform} - Exceção para {email}: {e}"
         print(err)
         log_error(err)
+        if "522" in str(e) or "ProxyError" in str(e):
+            with errored_lock:
+                errored_accounts.append((platform, email, password))
         return None
 
-# armazenamento ne fioo
+def process_login_retry(platform, email, password):
+    token = process_login(platform, email, password)
+    if token:
+        with results_lock:
+            results.append((platform, token, email, password))
+
 results = []
 results_lock = threading.Lock()
 
@@ -204,21 +210,41 @@ def process_group(platform, credentials):
             with results_lock:
                 results.append((platform, token, email, password))
 
+def reprocess_error_accounts():
+    max_retries = 3
+    retry = 0
+    while retry < max_retries:
+        with errored_lock:
+            if not errored_accounts:
+                break
+            current_batch = errored_accounts.copy()
+            errored_accounts.clear()
+        print(f"Reenviando os com erro... Tentativa {retry+1}")
+        with ThreadPoolExecutor(max_workers=len(current_batch)) as executor:
+            futures = []
+            for account in current_batch:
+                plataforma, email, senha = account
+                futures.append(executor.submit(process_login_retry, plataforma, email, senha))
+            for future in futures:
+                future.result()
+        retry += 1
+    if errored_accounts:
+        print("Contas que ainda não puderam ser processadas:")
+        for account in errored_accounts:
+            print(account)
+
 def main():
     contas_dir = "contas"
     if not os.path.exists(contas_dir):
         print(f"Pasta '{contas_dir}' não encontrada.")
         return
-
     arquivos = os.listdir(contas_dir)
     if not arquivos:
         print(f"Nenhum arquivo encontrado na pasta '{contas_dir}'.")
         return
-
     print("Arquivos disponíveis na pasta 'contas':")
     for idx, arquivo in enumerate(arquivos):
         print(f"{idx + 1}. {arquivo}")
-    
     escolha = input("Escolha o número do arquivo a ser processado: ")
     try:
         escolha = int(escolha)
@@ -228,11 +254,9 @@ def main():
     except ValueError:
         print("Entrada inválida.")
         return
-
     arquivo_selecionado = os.path.join(contas_dir, arquivos[escolha - 1])
     with open(arquivo_selecionado, "r", encoding="utf-8") as f:
         linhas = f.readlines()
-
     grupos = {"playpp": [], "braqqq": [], "pttwin": []}
     for linha in linhas:
         linha = linha.strip()
@@ -253,21 +277,20 @@ def main():
             err = f"Plataforma desconhecida: {plataforma} para {email}"
             print(err)
             log_error(err)
-
     threads = []
     for plat, creds in grupos.items():
         if creds:
             t = threading.Thread(target=process_group, args=(plat, creds))
             threads.append(t)
             t.start()
-
     for t in threads:
         t.join()
-
+    with errored_lock:
+        if errored_accounts:
+            reprocess_error_accounts()
     ordenados = []
     for plat in ["braqqq", "playpp", "pttwin"]:
         ordenados.extend([r for r in results if r[0].lower() == plat])
-
     tokens_dir = "tokenstotal"
     if not os.path.exists(tokens_dir):
         os.makedirs(tokens_dir)
@@ -275,14 +298,11 @@ def main():
     with open(tokens_file, "w", encoding="utf-8") as f:
         for plataforma, token, email, senha in ordenados:
             f.write(f"{plataforma} : {token} : {email} : {senha}\n")
-
     print("Processamento de logins concluído. Tokens salvos em", tokens_file)
-
     consulta = input("Deseja consultar os saldos? (s/n): ")
     if consulta.strip().lower().startswith("s"):
         wallet_results = []
         wallet_lock = threading.Lock()
-
         def process_wallet_for_result(result):
             plataforma, token, email, senha = result
             info = wallet_info.get(plataforma.lower())
@@ -316,7 +336,6 @@ def main():
                     log_error(err)
             with wallet_lock:
                 wallet_results.append((plataforma, token, email, senha, gold))
-
         wallet_threads = []
         for res in results:
             t = threading.Thread(target=process_wallet_for_result, args=(res,))
@@ -324,24 +343,19 @@ def main():
             t.start()
         for t in wallet_threads:
             t.join()
-
         ordenados_wallet = []
         for plat in ["braqqq", "playpp", "pttwin"]:
             ordenados_wallet.extend([r for r in wallet_results if r[0].lower() == plat])
-
         with open(tokens_file, "w", encoding="utf-8") as f:
             for plataforma, token, email, senha, gold in ordenados_wallet:
                 f.write(f"{plataforma} : {token} : {email} : {senha} saldo : {gold}\n")
-
         print("Consulta de saldos concluída e tokens atualizados com saldos.")
-
         total_saldo = 0.0
         saldo_braqqq = 0.0
         saldo_playpp = 0.0
         saldo_pttwin = 0.0
         contas_abaixo_10 = 0
         saldo_acima_20 = 0.0
-
         for plataforma, token, email, senha, gold in wallet_results:
             try:
                 saldo = float(gold)
@@ -358,7 +372,6 @@ def main():
                 contas_abaixo_10 += 1
             if saldo >= 20:
                 saldo_acima_20 += saldo
-
         print("\n--- Resumo dos Saldos ---")
         print(f"Total de saldo: {total_saldo:.2f}")
         print(f"Saldo do grupo braqqq: {saldo_braqqq:.2f}")
